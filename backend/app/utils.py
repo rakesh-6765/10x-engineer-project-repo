@@ -4,15 +4,19 @@ from typing import List
 from app.models import Prompt
 
 
+"""Utility functions for PromptLab"""
+
+from typing import List
+from app.models import Prompt
+
+
 def sort_prompts_by_date(prompts: List[Prompt], descending: bool = True) -> List[Prompt]:
     """Sort prompts by creation date.
     
     Note: There might be a bug here. Check the sort order!
     """
-    # BUG #3: This sorts ascending (oldest first) when it should sort descending (newest first)
-    # The 'descending' parameter is ignored!
-    return sorted(prompts, key=lambda p: p.created_at)
-
+    # Fix BUG #3: respect the 'descending' flag
+    return sorted(prompts, key=lambda p: p.created_at, reverse=descending)
 
 def filter_prompts_by_collection(prompts: List[Prompt], collection_id: str) -> List[Prompt]:
     return [p for p in prompts if p.collection_id == collection_id]

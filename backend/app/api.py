@@ -45,6 +45,7 @@ def list_prompts(
     collection_id: Optional[str] = None,
     search: Optional[str] = None
 ):
+    # Start with all prompts
     prompts = storage.get_all_prompts()
     
     # Filter by collection if specified
@@ -56,7 +57,6 @@ def list_prompts(
         prompts = search_prompts(prompts, search)
     
     # Sort by date (newest first)
-    # Note: There might be an issue with the sorting...
     prompts = sort_prompts_by_date(prompts, descending=True)
     
     return PromptList(prompts=prompts, total=len(prompts))
