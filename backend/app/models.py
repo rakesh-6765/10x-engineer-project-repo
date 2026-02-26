@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from uuid import uuid4
 
 
@@ -51,6 +51,15 @@ class PromptUpdate(PromptBase):
     """Payload model for updating prompts."""
 
 
+class PromptPartialUpdate(BaseModel):
+    """Payload model for partially updating prompts."""
+
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    content: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = Field(None, max_length=500)
+    collection_id: Optional[str] = None
+
+
 class Prompt(PromptBase):
     """Full prompt model used in storage and responses.
 
@@ -64,8 +73,7 @@ class Prompt(PromptBase):
     created_at: datetime = Field(default_factory=get_current_time)
     updated_at: datetime = Field(default_factory=get_current_time)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============== Collection Models ==============
@@ -98,8 +106,7 @@ class Collection(CollectionBase):
     id: str = Field(default_factory=generate_id)
     created_at: datetime = Field(default_factory=get_current_time)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============== Response Models ==============
@@ -139,3 +146,46 @@ class HealthResponse(BaseModel):
 
     status: str
     version: str
+
+
+# ============== Version Models ==============
+
+
+class PromptVersionBase(BaseModel):
+    """Shared fields for prompt version payloads."""
+
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1)
+    description: Optional[str] = Field(None, max_length=500)
+    collection_id: Optional[str] = None
+    change_note: Optional[str] = Field(None, max_length=280)
+    author: Optional[str] = Field(default="system", min_length=1, max_length=100)
+
+
+class PromptVersionCreate(PromptVersionBase):
+    """Payload model for manually creating prompt versions."""
+
+
+class PromptVersion(PromptVersionBase):
+    """Stored representation of a prompt version."""
+
+    id: str = Field(default_factory=generate_id)
+    prompt_id: str
+    created_at: datetime = Field(default_factory=get_current_time)
+    source_version_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PromptVersionList(BaseModel):
+    """Response wrapper for collections of prompt versions."""
+
+    versions: List[PromptVersion]
+    total: int
+
+
+class RollbackRequest(BaseModel):
+    """Payload for rollback operations."""
+
+    change_note: Optional[str] = Field(None, max_length=280)
+    author: Optional[str] = Field(default="system", min_length=1, max_length=100)

@@ -6,7 +6,7 @@ implementation.
 """
 
 from typing import Dict, List, Optional
-from app.models import Prompt, Collection
+from app.models import Prompt, Collection, PromptVersion
 
 
 class Storage:
@@ -20,6 +20,7 @@ class Storage:
     def __init__(self):
         self._prompts: Dict[str, Prompt] = {}
         self._collections: Dict[str, Collection] = {}
+        self._versions: Dict[str, PromptVersion] = {}
 
     # ============== Prompt Operations ==============
 
@@ -82,6 +83,30 @@ class Storage:
             del self._prompts[prompt_id]
             return True
         return False
+
+    # ============== Version Operations ==============
+
+    def create_version(self, version: PromptVersion) -> PromptVersion:
+        """Persist a new prompt version.
+
+        Args:
+            version: Version instance to store.
+
+        Returns:
+            PromptVersion: Stored version.
+        """
+        self._versions[version.id] = version
+        return version
+
+    def get_version(self, version_id: str) -> Optional[PromptVersion]:
+        """Fetch a version by identifier."""
+
+        return self._versions.get(version_id)
+
+    def get_versions_for_prompt(self, prompt_id: str) -> List[PromptVersion]:
+        """Return versions associated with a prompt."""
+
+        return [version for version in self._versions.values() if version.prompt_id == prompt_id]
 
     # ============== Collection Operations ==============
 
@@ -147,6 +172,7 @@ class Storage:
         """Reset storage by clearing prompts and collections."""
         self._prompts.clear()
         self._collections.clear()
+        self._versions.clear()
 
 
 # Global storage instance

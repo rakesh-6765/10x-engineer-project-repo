@@ -42,6 +42,28 @@ PromptLab lets AI engineers collaborate on prompt assets with structure and audi
 
 ---
 
+## Docker Usage
+
+- Build the backend image:
+	```bash
+	cd backend
+	docker build -t promptlab-backend .
+	```
+
+- Run the backend container:
+	```bash
+	docker run -p 8000:8000 promptlab-backend
+	```
+
+- Using Docker Compose (from the repo root):
+	```bash
+	docker-compose up --build backend
+	```
+
+The API is available at http://localhost:8000 and interactive docs at http://localhost:8000/docs.
+
+---
+
 ## Project Structure
 
 ```
@@ -74,6 +96,10 @@ PromptLab lets AI engineers collaborate on prompt assets with structure and audi
 | PUT | `/prompts/{id}` | Replace a prompt |
 | PATCH | `/prompts/{id}` | Partially update a prompt |
 | DELETE | `/prompts/{id}` | Delete a prompt |
+| GET | `/prompts/{id}/versions` | List versions for a prompt |
+| GET | `/prompts/{id}/versions/{version_id}` | Fetch a specific version |
+| POST | `/prompts/{id}/versions` | Manually create a new version |
+| POST | `/prompts/{id}/versions/{version_id}/rollback` | Roll back to a previous version |
 | GET | `/collections` | List collections |
 | GET | `/collections/{id}` | Retrieve a collection |
 | POST | `/collections` | Create a collection |
@@ -145,6 +171,15 @@ PromptLab lets AI engineers collaborate on prompt assets with structure and audi
 
 - **DELETE /prompts/{id}**
 	- Response: `204 No Content` when deleted.
+
+### Prompt Versions
+- **GET /prompts/{id}/versions** — Query params: `limit` (default 20), `offset` (default 0); returns newest-first list.
+- **GET /prompts/{id}/versions/{version_id}** — Returns a specific version if it belongs to the prompt.
+- **POST /prompts/{id}/versions** — Create a manual version and update the prompt to match.
+	- Body mirrors prompt fields plus optional `change_note` and `author`.
+- **POST /prompts/{id}/versions/{version_id}/rollback** — Revert a prompt to a prior version.
+	- Body: optional `change_note`, `author`.
+	- Creates a new version with `source_version_id` pointing to the rollback target.
 
 ### Collections
 - **GET /collections** — Returns `{ "collections": [...], "total": n }`.

@@ -2,20 +2,27 @@
 
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.models import (
     Prompt,
     PromptCreate,
     PromptUpdate,
+    PromptPartialUpdate,
     Collection,
     CollectionCreate,
     PromptList,
     CollectionList,
     HealthResponse,
     get_current_time,
+    PromptVersion,
+    PromptVersionCreate,
+    PromptVersionList,
+    RollbackRequest,
 )
 from app.storage import storage
 from app.utils import filter_prompts_by_collection, search_prompts, sort_prompts_by_date
@@ -34,6 +41,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Normalize validation errors to HTTP 400 for API clients."""
+
+    return JSONResponse(status_code=400, content={"detail": exc.errors()})
+
+
+def _validate_collection(collection_id: Optional[str]):
+    if collection_id:
+        collection = storage.get_collection(collection_id)
+        if not collection:
+            raise HTTPException(status_code=400, detail="Collection not found")
+
+
+def _snapshot_prompt(prompt: Prompt, change_note: Optional[str] = None, source_version_id: Optional[str] = None):
+    version = PromptVersion(
+        prompt_id=prompt.id,
+        title=prompt.title,
+        content=prompt.content,
+        description=prompt.description,
+        collection_id=prompt.collection_id,
+        change_note=change_note,
+        author="system",
+        source_version_id=source_version_id,
+    )
+    return storage.create_version(version)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -106,10 +141,7 @@ def create_prompt(prompt_data: PromptCreate):
         HTTPException: If the referenced collection does not exist.
     """
 
-    if prompt_data.collection_id:
-        collection = storage.get_collection(prompt_data.collection_id)
-        if not collection:
-            raise HTTPException(status_code=400, detail="Collection not found")
+    _validate_collection(prompt_data.collection_id)
 
     prompt = Prompt(**prompt_data.model_dump())
     return storage.create_prompt(prompt)
@@ -134,10 +166,9 @@ def update_prompt(prompt_id: str, prompt_data: PromptUpdate):
     if not existing:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    if prompt_data.collection_id:
-        collection = storage.get_collection(prompt_data.collection_id)
-        if not collection:
-            raise HTTPException(status_code=400, detail="Collection not found")
+    _validate_collection(prompt_data.collection_id)
+
+    _snapshot_prompt(existing)
 
     updated_prompt = Prompt(
         id=existing.id,
@@ -153,7 +184,7 @@ def update_prompt(prompt_id: str, prompt_data: PromptUpdate):
 
 
 @app.patch("/prompts/{prompt_id}", response_model=Prompt)
-def patch_prompt(prompt_id: str, prompt_data: PromptUpdate):
+def patch_prompt(prompt_id: str, prompt_data: PromptPartialUpdate):
     """Partially update an existing prompt.
 
     Args:
@@ -172,11 +203,13 @@ def patch_prompt(prompt_id: str, prompt_data: PromptUpdate):
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     update_fields = prompt_data.model_dump(exclude_unset=True)
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields provided for update")
 
     if "collection_id" in update_fields and update_fields["collection_id"]:
-        collection = storage.get_collection(update_fields["collection_id"])
-        if not collection:
-            raise HTTPException(status_code=400, detail="Collection not found")
+        _validate_collection(update_fields["collection_id"])
+
+    _snapshot_prompt(existing)
 
     updated_data = existing.model_dump()
     updated_data.update(update_fields)
@@ -187,6 +220,121 @@ def patch_prompt(prompt_id: str, prompt_data: PromptUpdate):
 
     updated_prompt = Prompt(**updated_data)
     return storage.update_prompt(prompt_id, updated_prompt)
+
+
+@app.get("/prompts/{prompt_id}/versions", response_model=PromptVersionList)
+def list_prompt_versions(
+    prompt_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """List versions for a prompt sorted newest first."""
+
+    prompt = storage.get_prompt(prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    versions = storage.get_versions_for_prompt(prompt_id)
+    versions = sorted(versions, key=lambda v: v.created_at, reverse=True)
+    paginated = versions[offset : offset + limit]
+    return PromptVersionList(versions=paginated, total=len(versions))
+
+
+@app.get("/prompts/{prompt_id}/versions/{version_id}", response_model=PromptVersion)
+def get_prompt_version(prompt_id: str, version_id: str):
+    """Fetch a specific version for a prompt."""
+
+    prompt = storage.get_prompt(prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    version = storage.get_version(version_id)
+    if not version or version.prompt_id != prompt_id:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return version
+
+
+@app.post("/prompts/{prompt_id}/versions", response_model=PromptVersion, status_code=201)
+def create_prompt_version(prompt_id: str, version_data: PromptVersionCreate):
+    """Manually create a new version and update the prompt to match it."""
+
+    prompt = storage.get_prompt(prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    _validate_collection(version_data.collection_id)
+
+    version = PromptVersion(
+        prompt_id=prompt_id,
+        title=version_data.title,
+        content=version_data.content,
+        description=version_data.description,
+        collection_id=version_data.collection_id,
+        change_note=version_data.change_note,
+        author=version_data.author or "system",
+    )
+    stored_version = storage.create_version(version)
+
+    updated_prompt = Prompt(
+        id=prompt.id,
+        title=version_data.title,
+        content=version_data.content,
+        description=version_data.description,
+        collection_id=version_data.collection_id,
+        created_at=prompt.created_at,
+        updated_at=get_current_time(),
+    )
+    storage.update_prompt(prompt_id, updated_prompt)
+
+    return stored_version
+
+
+@app.post(
+    "/prompts/{prompt_id}/versions/{version_id}/rollback",
+    response_model=PromptVersion,
+    status_code=201,
+)
+def rollback_prompt_version(prompt_id: str, version_id: str, payload: RollbackRequest):
+    """Create a rollback version and update the prompt to the target state."""
+
+    prompt = storage.get_prompt(prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    target_version = storage.get_version(version_id)
+    if not target_version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    if target_version.prompt_id != prompt_id:
+        raise HTTPException(status_code=400, detail="Version does not belong to this prompt")
+
+    _validate_collection(target_version.collection_id)
+
+    rollback_version = PromptVersion(
+        prompt_id=prompt_id,
+        title=target_version.title,
+        content=target_version.content,
+        description=target_version.description,
+        collection_id=target_version.collection_id,
+        change_note=payload.change_note,
+        author=payload.author or "system",
+        source_version_id=version_id,
+    )
+    stored_version = storage.create_version(rollback_version)
+
+    updated_prompt = Prompt(
+        id=prompt.id,
+        title=target_version.title,
+        content=target_version.content,
+        description=target_version.description,
+        collection_id=target_version.collection_id,
+        created_at=prompt.created_at,
+        updated_at=get_current_time(),
+    )
+    storage.update_prompt(prompt_id, updated_prompt)
+
+    return stored_version
 
 
 @app.delete("/prompts/{prompt_id}", status_code=204)
