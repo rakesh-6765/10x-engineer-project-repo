@@ -141,6 +141,21 @@ class Storage:
         """
         return list(self._collections.values())
 
+    def update_collection(self, collection_id: str, collection: Collection) -> Optional[Collection]:
+        """Replace an existing collection with new data.
+
+        Args:
+            collection_id: Identifier of the collection to update.
+            collection: New collection payload.
+
+        Returns:
+            Optional[Collection]: Updated collection when found, otherwise ``None``.
+        """
+        if collection_id not in self._collections:
+            return None
+        self._collections[collection_id] = collection
+        return collection
+
     def delete_collection(self, collection_id: str) -> bool:
         """Remove a collection from storage.
 

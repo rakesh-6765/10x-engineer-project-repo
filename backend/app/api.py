@@ -15,6 +15,8 @@ from app.models import (
     PromptPartialUpdate,
     Collection,
     CollectionCreate,
+    CollectionUpdate,
+    CollectionPartialUpdate,
     PromptList,
     CollectionList,
     HealthResponse,
@@ -401,6 +403,64 @@ def create_collection(collection_data: CollectionCreate):
 
     collection = Collection(**collection_data.model_dump())
     return storage.create_collection(collection)
+
+
+@app.put("/collections/{collection_id}", response_model=Collection)
+def update_collection(collection_id: str, collection_data: CollectionUpdate):
+    """Replace a collection with new data.
+
+    Args:
+        collection_id: Identifier of the collection to update.
+        collection_data: Replacement collection fields.
+
+    Returns:
+        Collection: Updated collection object.
+
+    Raises:
+        HTTPException: If collection does not exist.
+    """
+
+    existing = storage.get_collection(collection_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    updated = Collection(
+        id=existing.id,
+        name=collection_data.name,
+        description=collection_data.description,
+        created_at=existing.created_at,
+    )
+    return storage.update_collection(collection_id, updated)
+
+
+@app.patch("/collections/{collection_id}", response_model=Collection)
+def patch_collection(collection_id: str, collection_data: CollectionPartialUpdate):
+    """Partially update a collection.
+
+    Args:
+        collection_id: Identifier of the collection to patch.
+        collection_data: Fields to update.
+
+    Returns:
+        Collection: Updated collection object.
+
+    Raises:
+        HTTPException: If collection does not exist or no fields provided.
+    """
+
+    existing = storage.get_collection(collection_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    update_fields = collection_data.model_dump(exclude_unset=True)
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields provided for update")
+
+    updated_data = existing.model_dump()
+    updated_data.update(update_fields)
+
+    updated = Collection(**updated_data)
+    return storage.update_collection(collection_id, updated)
 
 
 @app.delete("/collections/{collection_id}", status_code=204)

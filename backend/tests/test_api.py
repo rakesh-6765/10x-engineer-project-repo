@@ -150,6 +150,40 @@ class TestCollections:
     def test_get_collection_not_found(self, client: TestClient):
         response = client.get("/collections/nonexistent-id")
         assert response.status_code == 404
+
+    def test_update_collection(self, client: TestClient, sample_collection_data):
+        create_response = client.post("/collections", json=sample_collection_data)
+        collection_id = create_response.json()["id"]
+
+        response = client.put(
+            f"/collections/{collection_id}",
+            json={"name": "Ops", "description": "Operations prompts"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == collection_id
+        assert data["name"] == "Ops"
+        assert data["description"] == "Operations prompts"
+
+    def test_patch_collection(self, client: TestClient, sample_collection_data):
+        create_response = client.post("/collections", json=sample_collection_data)
+        collection_id = create_response.json()["id"]
+
+        response = client.patch(
+            f"/collections/{collection_id}",
+            json={"description": "Updated description only"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == sample_collection_data["name"]
+        assert data["description"] == "Updated description only"
+
+    def test_patch_collection_rejects_empty_payload(self, client: TestClient, sample_collection_data):
+        create_response = client.post("/collections", json=sample_collection_data)
+        collection_id = create_response.json()["id"]
+
+        response = client.patch(f"/collections/{collection_id}", json={})
+        assert response.status_code == 400
     
     def test_delete_collection_with_prompts(self, client: TestClient, sample_collection_data, sample_prompt_data):
         """Test deleting a collection that has prompts.

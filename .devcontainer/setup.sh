@@ -1,6 +1,26 @@
 #!/bin/bash
 echo "Starting secure environment setup (Generating config.yaml)..."
 
+echo "Checking npm availability..."
+if command -v npm >/dev/null 2>&1; then
+  echo "npm is already installed: $(npm --version)"
+else
+  echo "npm not found. Installing nodejs and npm..."
+
+  if [ "$(id -u)" -eq 0 ]; then
+    APT_PREFIX=""
+  elif command -v sudo >/dev/null 2>&1; then
+    APT_PREFIX="sudo"
+  else
+    echo "FATAL ERROR: Need root privileges (or sudo) to install npm."
+    exit 1
+  fi
+
+  $APT_PREFIX apt-get update
+  $APT_PREFIX apt-get install -y nodejs npm
+  echo "npm installed: $(npm --version)"
+fi
+
 CONFIG_DIR="$HOME/.continue"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 API_KEY="sk-helicone-2v7akjq-m2xueay-ttt23kq-hx57ubq"

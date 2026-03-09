@@ -95,6 +95,17 @@ class CollectionCreate(CollectionBase):
     """Payload model for creating collections."""
 
 
+class CollectionUpdate(CollectionBase):
+    """Payload model for replacing collections."""
+
+
+class CollectionPartialUpdate(BaseModel):
+    """Payload model for partially updating collections."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+
+
 class Collection(CollectionBase):
     """Full collection model used in storage and responses.
 
